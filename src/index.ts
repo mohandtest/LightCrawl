@@ -142,8 +142,8 @@ export class LightCrawl {
       throw new Error(`Invalid range format. Use "x-y" (e.g., "1-50") or "all"`);
     }
 
-    let start = parseInt(match[1]) - 1;
-    let end = parseInt(match[2]);
+    let start = parseInt(match[1]!) - 1;
+    let end = parseInt(match[2]!);
 
     if (start < 0 || end > totalChapters || start >= end) {
       throw new Error(`Invalid range. Must be between 1-${totalChapters}`);

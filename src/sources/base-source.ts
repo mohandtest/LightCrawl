@@ -1,5 +1,5 @@
 import { Fetcher } from "../core/fetcher";
-import { Chapter, Novel, SearchResult, ScraperConfig } from "../types/models";
+import type { SearchResult, ScraperConfig, Novel } from "../types/models";
 
 export abstract class BaseSource {
   abstract name: string;

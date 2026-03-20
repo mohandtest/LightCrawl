@@ -64,36 +64,3 @@ if (result.success) {
   }
   process.exit(1);
 }
-
-const start = performance.now();
-
-const entrypoints = [...new Bun.Glob("**.html").scanSync("src")]
-  .map(a => path.resolve("src", a))
-  .filter(dir => !dir.includes("node_modules"));
-console.log(`📄 Found ${entrypoints.length} HTML ${entrypoints.length === 1 ? "file" : "files"} to process\n`);
-
-const result = await Bun.build({
-  entrypoints,
-  outdir,
-  plugins: [plugin],
-  minify: true,
-  target: "browser",
-  sourcemap: "linked",
-  define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
-  },
-  ...cliConfig,
-});
-
-const end = performance.now();
-
-const outputTable = result.outputs.map(output => ({
-  File: path.relative(process.cwd(), output.path),
-  Type: output.kind,
-  Size: formatFileSize(output.size),
-}));
-
-console.table(outputTable);
-const buildTime = (end - start).toFixed(2);
-
-console.log(`\n✅ Build completed in ${buildTime}ms\n`);

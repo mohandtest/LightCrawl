@@ -4,6 +4,7 @@
  */
 
 import { LightCrawl } from "../index";
+import type { SearchResult } from "../types/models";
 import { join } from "path";
 import {
   input,
@@ -59,7 +60,7 @@ async function handleSearch(crawler: LightCrawl): Promise<void> {
   }
 
   console.log(`\n✅ Found ${results.length} results:\n`);
-  results.slice(0, 10).forEach((r, i) => {
+  results.slice(0, 10).forEach((r: SearchResult, i: number) => {
     console.log(`${i + 1}. ${r.title}`);
   });
 

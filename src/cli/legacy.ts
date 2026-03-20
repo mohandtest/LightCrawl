@@ -4,6 +4,7 @@
  */
 
 import { LightCrawl } from "../index";
+import type { SearchResult } from "../types/models";
 import { join } from "path";
 import { isValidUrl, slugify } from "./utils";
 
@@ -45,7 +46,7 @@ async function handleSearch(
   }
 
   console.log(`\n✅ Found ${results.length} results:\n`);
-  results.slice(0, 5).forEach((r, i) => {
+  results.slice(0, 5).forEach((r: SearchResult, i: number) => {
     console.log(`${i + 1}. ${r.title}`);
     console.log(`   ${r.url}\n`);
   });

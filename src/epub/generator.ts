@@ -1,5 +1,5 @@
 import JSZip from "jszip";
-import { Novel, Chapter, Volume } from "../types/models";
+import type { Novel, Chapter, Volume } from "../types/models";
 import { downloadCoverImage, getImageExtension } from "../utils/cover";
 import { organizeChaptersIntoVolumes } from "../utils/volumes";
 
@@ -307,7 +307,7 @@ ${navContent}    </ol>
   }
 
   private escape(text: string): string {
-    return text.replace(/[&<>"']/g, (char) => {
+    return text.replace(/[&<>"']/g, (char: string) => {
       const escapeMap: { [key: string]: string } = {
         "&": "&amp;",
         "<": "&lt;",
@@ -315,7 +315,7 @@ ${navContent}    </ol>
         '"': "&quot;",
         "'": "&apos;",
       };
-      return escapeMap[char];
+      return escapeMap[char] || char;
     });
   }
 }
