@@ -1,63 +1,75 @@
+/**
+ * LightCrawl - Light Novel Scraper
+ * Modular entry point with core Crawler logic
+ */
+
 import { NovelFullSource } from "./sources/novelfull";
 import { NovGoSource } from "./sources/novgo";
 import { EPUBGenerator } from "./epub/generator";
+import { ProgressBar } from "./utils/progress";
+import { mkdir } from "fs/promises";
+import { existsSync } from "fs";
+import { join } from "path";
 
+/**
+ * Core LightCrawl Scraper Class
+ * Handles novel parsing, chapter downloading, and EPUB generation
+ */
 export class LightCrawl {
   private sources: Map<string, any> = new Map();
+  private maxConcurrency: number = 5; // Concurrent downloads
 
   constructor() {
     this.registerSource("novelfull", new NovelFullSource());
     this.registerSource("novgo", new NovGoSource());
   }
 
-  registerSource(name: string, source: any) {
+  registerSource(name: string, source: any): void {
     this.sources.set(name, source);
   }
 
   async downloadNovel(
     novelUrl: string,
-    outputPath: string,
-    sourceName?: string
+    outputDir: string,
+    chapterRange?: string
   ): Promise<void> {
-    let source;
-
-    if (sourceName) {
-      source = this.sources.get(sourceName);
-      if (!source) throw new Error(`Unknown source: ${sourceName}`);
-    } else {
-      // Auto-detect source
-      source = this.detectSource(novelUrl);
-      if (!source) throw new Error(`No matching source for ${novelUrl}`);
-    }
+    const source = this.detectSource(novelUrl);
+    if (!source) throw new Error(`No matching source for ${novelUrl}`);
 
     console.log(`🔍 Parsing novel from ${source.name}...`);
     const novel = await source.parseNovel(novelUrl);
 
-    console.log(`📥 Downloading ${novel.chapters.length} chapters...`);
-    const chapters = novel.chapters.slice(0, 10); // Limit for demo
-
-    for (let i = 0; i < chapters.length; i++) {
-      const chapter = chapters[i];
-      try {
-        console.log(`  [${i + 1}/${chapters.length}] ${chapter.title}`);
-        chapter.content = await source.parseChapter(chapter.url);
-      } catch (error) {
-        console.error(`    Failed: ${error}`);
-      }
+    // Ensure output directory exists
+    if (!existsSync(outputDir)) {
+      await mkdir(outputDir, { recursive: true });
     }
 
-    console.log(`📦 Generating EPUB...`);
+    console.log(`📚 Total chapters available: ${novel.chapters.length}`);
+
+    // Parse chapter range
+    let chaptersToDownload = novel.chapters;
+    if (chapterRange && chapterRange !== "all") {
+      const range = this.parseChapterRange(chapterRange, novel.chapters.length);
+      chaptersToDownload = novel.chapters.slice(range.start, range.end);
+      console.log(`📖 Downloading chapters ${range.start + 1}-${range.end}...\n`);
+    } else {
+      console.log(`📖 Downloading all ${novel.chapters.length} chapters...\n`);
+    }
+
+    // Download chapters concurrently with progress bar
+    await this.downloadChaptersConcurrent(source, chaptersToDownload);
+
+    console.log(`\n📦 Generating EPUB...`);
     const generator = new EPUBGenerator();
-    await generator.generate({ ...novel, chapters }, outputPath);
+    
+    // Use novel title for filename, fallback to "novel" if empty
+    const filename = this.sanitizeFilename(novel.title) || "novel";
+    const epubPath = join(outputDir, `${filename}.epub`);
+    
+    await generator.generate({ ...novel, chapters: chaptersToDownload }, epubPath);
 
-    console.log(`✅ EPUB saved to ${outputPath}`);
-  }
-
-  private detectSource(url: string) {
-    for (const [_, source] of this.sources) {
-      if (url.includes(source.homeUrl)) return source;
-    }
-    return null;
+    console.log(`✅ EPUB saved to ${epubPath}`);
+    console.log(`📂 Novel folder: ${outputDir}`);
   }
 
   async search(query: string, sourceName: string) {
@@ -67,110 +79,110 @@ export class LightCrawl {
     console.log(`🔍 Searching ${source.name} for "${query}"...`);
     return source.search(query);
   }
+
+  private async downloadChaptersConcurrent(
+    source: any,
+    chapters: any[]
+  ): Promise<void> {
+    const progress = new ProgressBar(chapters.length, "📥 Downloading");
+    let completed = 0;
+    let index = 0;
+
+    const download = async () => {
+      while (index < chapters.length) {
+        const i = index++;
+        const chapter = chapters[i];
+
+        try {
+          chapter.content = await source.parseChapter(chapter.url);
+          completed++;
+          progress.update(completed);
+        } catch (error) {
+          // Silently fail and continue
+          completed++;
+          progress.update(completed);
+        }
+      }
+    };
+
+    // Run multiple downloaders concurrently
+    const workers = Array(this.maxConcurrency).fill(null).map(() => download());
+    await Promise.all(workers);
+
+    progress.finish();
+  }
+
+  private sanitizeFilename(title: string): string {
+    return title
+      .toLowerCase()
+      .trim()
+      .replace(/[^\w\s-]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 100); // Limit filename length
+  }
+
+  private detectSource(url: string) {
+    for (const [_, source] of this.sources) {
+      if (url.includes(source.homeUrl)) return source;
+    }
+    return null;
+  }
+
+  private parseChapterRange(
+    rangeStr: string,
+    totalChapters: number
+  ): { start: number; end: number } {
+    if (rangeStr.toLowerCase() === "all") {
+      return { start: 0, end: totalChapters };
+    }
+
+    const match = rangeStr.match(/^(\d+)-(\d+)$/);
+    if (!match) {
+      throw new Error(`Invalid range format. Use "x-y" (e.g., "1-50") or "all"`);
+    }
+
+    let start = parseInt(match[1]) - 1;
+    let end = parseInt(match[2]);
+
+    if (start < 0 || end > totalChapters || start >= end) {
+      throw new Error(`Invalid range. Must be between 1-${totalChapters}`);
+    }
+
+    return { start, end };
+  }
 }
 
-// CLI interface
-const crawler = new LightCrawl();
+// ============================================================================
+// CLI Routing
+// ============================================================================
 
-async function main() {
+import { runInteractiveMode } from "./cli/interactive";
+import { runLegacyMode } from "./cli/legacy";
+import { printHelp, closeReadline } from "./cli/utils";
+
+async function main(): Promise<void> {
   const args = Bun.argv.slice(2);
 
-  if (!args.length || args[0] === "--help" || args[0] === "-h") {
-    printHelp();
-    return;
-  }
-
   try {
-    if (args[0] === "search") {
-      const query = args[1];
-      const source = args[2] || "novelfull";
-
-      if (!query) {
-        console.error("❌ Search query is required");
-        console.error("Usage: bun src/index.ts search <query> [source]");
-        process.exit(1);
-      }
-
-      const results = await crawler.search(query, source);
-      if (results.length === 0) {
-        console.log(`No results found for "${query}"`);
-        return;
-      }
-      console.log(`\n📚 Found ${results.length} results:\n`);
-      results.slice(0, 5).forEach((r, i) => {
-        console.log(`${i + 1}. ${r.title}`);
-        console.log(`   ${r.url}\n`);
-      });
-    } else if (args[0] === "download") {
-      const url = args[1];
-      const output = args[2] || "./novel.epub";
-
-      if (!url) {
-        console.error("❌ Novel URL is required");
-        console.error("Usage: bun src/index.ts download <url> [output.epub]");
-        process.exit(1);
-      }
-
-      if (!isValidUrl(url)) {
-        console.error("❌ Invalid URL provided");
-        process.exit(1);
-      }
-
-      if (!isValidOutputPath(output)) {
-        console.error("❌ Invalid output path provided");
-        process.exit(1);
-      }
-
-      await crawler.downloadNovel(url, output);
-    } else {
+    // Help command
+    if (args[0] === "--help" || args[0] === "-h") {
       printHelp();
+      return;
     }
-  } catch (error) {
-    console.error("❌ Error:", error instanceof Error ? error.message : error);
-    process.exit(1);
+
+    const crawler = new LightCrawl();
+
+    // Legacy command mode if args provided
+    if (args.length > 0) {
+      await runLegacyMode(crawler, args);
+    } else {
+      // Interactive mode
+      await runInteractiveMode(crawler);
+    }
+  } finally {
+    closeReadline();
   }
-}
-
-function printHelp() {
-  console.log(`
-╭─ LightCrawl - Light Novel Scraper ─────────────────╮
-│                                                      │
-│ Usage:                                               │
-│   bun src/index.ts search <query> [source]          │
-│   bun src/index.ts download <url> [output.epub]     │
-│                                                      │
-│ Commands:                                            │
-│   search    Search for novels                        │
-│   download Download novel and generate EPUB         │
-│                                                      │
-│ Options:                                             │
-│   -h, --help Show this help message                 │
-│                                                      │
-│ Sources:                                             │
-│   novelfull  (default)                              │
-│   novgo                                             │
-│                                                      │
-│ Examples:                                            │
-│   bun src/index.ts search "Cultivation" novelfull   │
-│   bun src/index.ts download <novel-url>            │
-│   bun src/index.ts download <novel-url> out.epub   │
-│                                                      │
-╰──────────────────────────────────────────────────────╯
-`);
-}
-
-function isValidUrl(url: string): boolean {
-  try {
-    new URL(url);
-    return url.startsWith("http://") || url.startsWith("https://");
-  } catch {
-    return false;
-  }
-}
-
-function isValidOutputPath(path: string): boolean {
-  // Don't allow paths that traverse up or are system paths
-  return !path.includes("..") && !path.startsWith("/") && path.length > 0 && path.endsWith(".epub");
 }
 
 main().catch(console.error);
