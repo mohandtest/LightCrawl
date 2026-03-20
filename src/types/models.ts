@@ -5,6 +5,19 @@ export interface SearchResult {
   cover?: string;
 }
 
+export interface Chapter {
+  id: number;
+  title: string;
+  url: string;
+  content?: string;
+}
+
+export interface Volume {
+  id: number;
+  title?: string;
+  chapters: Chapter[];
+}
+
 export interface Novel {
   title: string;
   url: string;
@@ -13,13 +26,7 @@ export interface Novel {
   genres: string[];
   summary: string;
   chapters: Chapter[];
-}
-
-export interface Chapter {
-  id: number;
-  title: string;
-  url: string;
-  content?: string;
+  volumes?: Volume[];
 }
 
 export interface ScraperConfig {
